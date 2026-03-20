@@ -1,15 +1,46 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import AppIcon from './components/AppIcon.vue';
 import RepoConfigPanel from './components/RepoConfigPanel.vue';
 import DirectoryTree from './components/DirectoryTree.vue';
 import FileTable from './components/FileTable.vue';
 import PreviewPane from './components/PreviewPane.vue';
 import StatsPanel from './components/StatsPanel.vue';
 import LogPanel from './components/LogPanel.vue';
-import { basename, dirname, getFolderStats, normalizePath } from './lib/path';
+import { basename, getFolderStats, normalizePath } from './lib/path';
 import { useAppStore } from './store/appStore';
 
 const UI_STATE_KEY = 'gitnovelbox.ui-state';
+const sceneDefinitions = [
+  {
+    id: 'dawn',
+    label: '清晨',
+    title: '让光先落进房间，再打开目录。',
+    description: '暖灰与云母白像晨间的纱帘，界面不再像一台工具，而像一个被慢慢唤醒的居所。',
+    accent: '#d6b48a',
+  },
+  {
+    id: 'noon',
+    label: '正午',
+    title: '所有文件都沐在温和的光里。',
+    description: '搜索、筛选、拖拽上传被留在最安静的位置，像看不见的手，轻轻调整房间里的秩序。',
+    accent: '#e0c7a2',
+  },
+  {
+    id: 'dusk',
+    label: '黄昏',
+    title: '阅读、沐浴、睡眠，像同一束流动的光。',
+    description: '分屏叙事展示三段生活，文件管理退到背景，只留下松弛与连贯的体验。',
+    accent: '#c98f67',
+  },
+  {
+    id: 'night',
+    label: '深夜',
+    title: '夜色收拢界面，属性像抽屉一样轻轻滑出。',
+    description: '右侧抽屉接近系统资源管理器的质感，把必要信息留给你，把技术噪音藏起来。',
+    accent: '#8c7f86',
+  },
+];
 
 function loadUiState() {
   try {
@@ -22,6 +53,11 @@ function loadUiState() {
       trashRecords: Array.isArray(parsed.trashRecords) ? parsed.trashRecords : [],
       selectedIds: Array.isArray(parsed.selectedIds) ? parsed.selectedIds : [],
       drawerOpen: parsed.drawerOpen ?? true,
+      sidebarCollapsed: parsed.sidebarCollapsed ?? false,
+      settingsOpen: parsed.settingsOpen ?? false,
+      activeSettingsTab: parsed.activeSettingsTab || 'repo',
+      techOpen: parsed.techOpen ?? false,
+      timeOverride: typeof parsed.timeOverride === 'number' ? parsed.timeOverride : null,
     };
   } catch (error) {
     return {
@@ -31,6 +67,11 @@ function loadUiState() {
       trashRecords: [],
       selectedIds: [],
       drawerOpen: true,
+      sidebarCollapsed: false,
+      settingsOpen: false,
+      activeSettingsTab: 'repo',
+      techOpen: false,
+      timeOverride: null,
     };
   }
 }
@@ -45,22 +86,26 @@ function saveUiState(ui) {
       trashRecords: ui.trashRecords.slice(0, 100),
       selectedIds: ui.selectedIds,
       drawerOpen: ui.drawerOpen,
+      sidebarCollapsed: ui.sidebarCollapsed,
+      settingsOpen: ui.settingsOpen,
+      activeSettingsTab: ui.activeSettingsTab,
+      techOpen: ui.techOpen,
+      timeOverride: ui.timeOverride,
     }),
   );
 }
 
 const store = useAppStore();
 const fileInputRef = ref(null);
-const contextMenu = ref({
-  visible: false,
-  x: 0,
-  y: 0,
-  title: '',
-  items: [],
-});
+const backgroundCanvas = ref(null);
+const contextMenu = ref({ visible: false, x: 0, y: 0, title: '', items: [] });
 const userMenuOpen = ref(false);
 const dropActive = ref(false);
+const scrollProgress = ref(0);
+const ambientValues = reactive({ temperature: 24, humidity: 46, light: 72 });
 const uiState = reactive(loadUiState());
+let animationFrameId = 0;
+let particles = [];
 
 watch(
   uiState,
@@ -72,19 +117,33 @@ watch(
 
 const navItems = computed(() => {
   const all = store.mergedEntries.value;
-  const recentSet = new Set(uiState.recentItems.map((item) => item.path));
-  const favoriteSet = new Set(uiState.favoritePaths);
   return [
-    { key: 'all', icon: '🗂️', label: '全部文件', count: all.length },
-    { key: 'recent', icon: '🕘', label: '最近', count: uiState.recentItems.length },
-    { key: 'favorites', icon: '⭐', label: '收藏', count: uiState.favoritePaths.length },
-    { key: 'remote', icon: '☁️', label: '远端', count: all.filter((item) => item.remote).length },
-    { key: 'local', icon: '💻', label: '本地', count: all.filter((item) => item.local).length },
-    { key: 'recycle', icon: '🗑️', label: '回收区', count: uiState.trashRecords.length },
-    { key: 'favorites-folder', hidden: true, count: [...favoriteSet].length },
-    { key: 'recent-folder', hidden: true, count: [...recentSet].length },
-  ].filter((item) => !item.hidden);
+    { key: 'all', icon: 'all', label: '全部文件', count: all.length },
+    { key: 'recent', icon: 'recent', label: '最近', count: uiState.recentItems.length },
+    { key: 'favorites', icon: 'favorites', label: '收藏', count: uiState.favoritePaths.length },
+    { key: 'remote', icon: 'remote', label: '远端', count: all.filter((item) => item.remote).length },
+    { key: 'local', icon: 'local', label: '本地', count: all.filter((item) => item.local).length },
+    { key: 'recycle', icon: 'recycle', label: '回收区', count: uiState.trashRecords.length },
+  ];
 });
+
+const settingsTabs = [
+  { key: 'repo', label: '连接与同步' },
+  { key: 'stats', label: '统计' },
+  { key: 'logs', label: '日志' },
+];
+
+const activeSceneIndex = computed(() => {
+  if (uiState.timeOverride !== null) return uiState.timeOverride;
+  return Math.min(sceneDefinitions.length - 1, Math.max(0, Math.floor(scrollProgress.value * sceneDefinitions.length)));
+});
+const activeScene = computed(() => sceneDefinitions[activeSceneIndex.value]);
+const sceneMetaCards = computed(() => [
+  { label: '温度', value: `${ambientValues.temperature.toFixed(1)}°C`, hint: '随鼠标位置浮动' },
+  { label: '湿度', value: `${ambientValues.humidity.toFixed(0)}%`, hint: '空气感轻轻变化' },
+  { label: '光照', value: `${ambientValues.light.toFixed(0)}%`, hint: '随场景与滚动调整' },
+]);
+const pageStyle = computed(() => ({ '--scene-accent': activeScene.value.accent }));
 
 const breadcrumbs = computed(() => {
   const current = store.state.selectedFolder || '';
@@ -109,39 +168,21 @@ const selectedItemId = computed(() => {
 
 const headerSummary = computed(() => {
   if (uiState.navSection === 'recycle') {
-    return {
-      title: '回收区',
-      description: '这里显示通过网页删除远端文件后的记录，便于你回顾刚才删掉了什么。',
-    };
+    return { title: '回收区', description: '删掉的远端记录会暂留在这里，方便你回想刚才做过的动作。' };
   }
   if (uiState.navSection === 'favorites') {
-    return {
-      title: '收藏',
-      description: '收藏文件和文件夹会固定在这里，方便快速回到常看的目录。',
-    };
+    return { title: '收藏', description: '像把常看的那几本书放在沙发边，随手就能重新打开。' };
   }
   if (uiState.navSection === 'recent') {
-    return {
-      title: '最近',
-      description: '最近访问的文件和文件夹会显示在这里。',
-    };
+    return { title: '最近', description: '保留你刚刚经过的路径，让网盘像日常动线一样自然。' };
   }
   if (uiState.navSection === 'remote') {
-    return {
-      title: '远端文件',
-      description: '仅看存在于 GitHub 仓库中的内容，可用于检查远端备份覆盖情况。',
-    };
+    return { title: '远端文件', description: '只看 GitHub 私有仓库里的内容，检查备份是否完整。' };
   }
   if (uiState.navSection === 'local') {
-    return {
-      title: '本地文件',
-      description: '仅看当前浏览器导入的本地 TXT 文件，适合整理待上传项目。',
-    };
+    return { title: '本地文件', description: '只看浏览器已读入的本地 TXT，适合整理再上传。' };
   }
-  return {
-    title: breadcrumbs.value.at(-1)?.label || '全部文件',
-    description: '文件夹优先显示，支持多选、右键菜单、拖拽导入、面包屑和列表/卡片双视图。',
-  };
+  return { title: breadcrumbs.value.at(-1)?.label || '全部文件', description: '主界面只保留导航、目录与网盘内容；配置、统计、日志都藏进设置菜单。' };
 });
 
 const currentFolderNode = computed(() => {
@@ -173,7 +214,7 @@ function isFavorite(path) {
 }
 
 function toggleFavorite(item) {
-  const path = normalizePath(item?.type === 'folder' ? item.path : item?.relativePath || '');
+  const path = normalizePath(item?.type === 'folder' ? item.path : item?.relativePath || item?.path || '');
   if (!path) return;
   if (isFavorite(path)) {
     uiState.favoritePaths = uiState.favoritePaths.filter((value) => value !== path);
@@ -184,19 +225,12 @@ function toggleFavorite(item) {
 
 function entryMatchesNavigation(entry) {
   switch (uiState.navSection) {
-    case 'remote':
-      return Boolean(entry.remote);
-    case 'local':
-      return Boolean(entry.local);
-    case 'favorites':
-      return isFavorite(entry.relativePath);
-    case 'recent':
-      return recentSet.value.has(entry.relativePath);
-    case 'recycle':
-      return false;
-    case 'all':
-    default:
-      return true;
+    case 'remote': return Boolean(entry.remote);
+    case 'local': return Boolean(entry.local);
+    case 'favorites': return isFavorite(entry.relativePath);
+    case 'recent': return recentSet.value.has(entry.relativePath);
+    case 'recycle': return false;
+    default: return true;
   }
 }
 
@@ -221,15 +255,10 @@ function entryMatchesFilters(entry) {
   const inSource = `${entry.local ? '本地' : ''}${entry.remote ? '远端' : ''}`.includes(searchQuery);
 
   switch (store.state.searchScope) {
-    case '文件名':
-      return inName;
-    case '路径':
-      return inPath;
-    case '状态':
-      return inStatus || inSource;
-    case '全部':
-    default:
-      return inName || inPath || inStatus || inSource;
+    case '文件名': return inName;
+    case '路径': return inPath;
+    case '状态': return inStatus || inSource;
+    default: return inName || inPath || inStatus || inSource;
   }
 }
 
@@ -238,19 +267,12 @@ function compareItems(a, b) {
   const statusWeight = { 待上传: 1, 待更新: 2, 仅远端: 3, 已同步: 4, 已移除: 5, 文件夹: 0 };
   const pick = (item) => {
     switch (store.state.sortField) {
-      case 'name':
-        return item.name || '';
-      case 'size':
-        return item.size || 0;
-      case 'status':
-        return statusWeight[item.status] ?? 999;
-      case 'updatedAt':
-        return item.updatedAt || item.deletedAt || 0;
-      case 'source':
-        return item.sourceLabel || `${item.local ? 'L' : ''}${item.remote ? 'R' : ''}`;
-      case 'path':
-      default:
-        return item.relativePath || item.path || '';
+      case 'name': return item.name || '';
+      case 'size': return item.size || 0;
+      case 'status': return statusWeight[item.status] ?? 999;
+      case 'updatedAt': return item.updatedAt || item.deletedAt || 0;
+      case 'source': return item.sourceLabel || `${item.local ? 'L' : ''}${item.remote ? 'R' : ''}`;
+      default: return item.relativePath || item.path || '';
     }
   };
 
@@ -278,18 +300,14 @@ const visibleFiles = computed(() => {
   return store.mergedEntries.value
     .filter((entry) => {
       if (!entryMatchesFilters(entry)) return false;
-      if (!searchActive && currentFolder) {
-        return entry.folder === currentFolder;
-      }
-      if (!searchActive && !currentFolder) {
-        return entry.folder === '';
-      }
+      if (!searchActive && currentFolder) return entry.folder === currentFolder;
+      if (!searchActive && !currentFolder) return entry.folder === '';
       return true;
     })
     .map((entry) => ({
       ...entry,
       type: 'file',
-      icon: entry.remote && entry.local ? '📘' : entry.remote ? '☁️' : '💻',
+      icon: entry.remote && entry.local ? 'file-sync' : entry.remote ? 'file-remote' : 'file-local',
       favorite: isFavorite(entry.relativePath),
       checked: uiState.selectedIds.includes(entry.id),
       sourceLabel: `${entry.local ? '本地' : ''}${entry.local && entry.remote ? ' / ' : ''}${entry.remote ? '远端' : ''}` || '-',
@@ -329,7 +347,7 @@ const visibleFolders = computed(() => {
           pendingCount: stats.pendingCount,
           remoteOnlyCount: stats.remoteOnlyCount,
           favorite: isFavorite(path),
-          icon: '📁',
+          icon: 'folder',
         };
       })
       .filter((item) => (searchActive ? `${item.name} ${item.path}`.toLowerCase().includes(query) : true))
@@ -354,7 +372,7 @@ const visibleFolders = computed(() => {
         pendingCount: stats.pendingCount,
         remoteOnlyCount: stats.remoteOnlyCount,
         favorite: isFavorite(child.path),
-        icon: '📁',
+        icon: 'folder',
         hiddenBecauseEmpty: subtreeEntries.length === 0,
       };
     })
@@ -366,49 +384,31 @@ const visibleFolders = computed(() => {
 const recycleItems = computed(() => {
   const query = store.state.searchQuery.trim().toLowerCase();
   return [...uiState.trashRecords]
-    .filter((item) => {
-      if (!query) return true;
-      return `${item.name} ${item.path}`.toLowerCase().includes(query);
-    })
+    .filter((item) => (!query ? true : `${item.name} ${item.path}`.toLowerCase().includes(query)))
     .map((item) => ({
       ...item,
       id: `trash:${item.path}:${item.deletedAt}`,
       type: 'trash',
       relativePath: item.path,
       status: '已移除',
-      icon: '🗑️',
+      icon: 'recycle',
       favorite: false,
     }))
     .sort(compareItems);
 });
 
-const explorerItems = computed(() => {
-  if (uiState.navSection === 'recycle') return recycleItems.value;
-  return [...visibleFolders.value, ...visibleFiles.value].sort(compareItems);
-});
-
-const visibleMetricsEntries = computed(() => {
-  if (uiState.navSection === 'recycle') return [];
-  return visibleFiles.value;
-});
-
+const explorerItems = computed(() => (uiState.navSection === 'recycle' ? recycleItems.value : [...visibleFolders.value, ...visibleFiles.value].sort(compareItems)));
+const visibleMetricsEntries = computed(() => (uiState.navSection === 'recycle' ? [] : visibleFiles.value));
 const selectedEntries = computed(() => store.mergedEntries.value.filter((entry) => uiState.selectedIds.includes(entry.id)));
 
-function closeContextMenu() {
-  contextMenu.value.visible = false;
-}
-
-function showContextMenu({ x, y, title, items }) {
-  contextMenu.value = { visible: true, x, y, title, items };
-}
-
-function openInspector() {
-  uiState.drawerOpen = true;
-}
-
-function closeInspector() {
-  uiState.drawerOpen = false;
-}
+function closeContextMenu() { contextMenu.value.visible = false; }
+function showContextMenu({ x, y, title, items }) { contextMenu.value = { visible: true, x, y, title, items }; }
+function openInspector() { uiState.drawerOpen = true; }
+function closeInspector() { uiState.drawerOpen = false; }
+function openSettings(tab = uiState.activeSettingsTab) { uiState.activeSettingsTab = tab; uiState.settingsOpen = true; userMenuOpen.value = false; }
+function closeSettings() { uiState.settingsOpen = false; }
+function setScene(index) { uiState.timeOverride = index; }
+function clearSceneOverride() { uiState.timeOverride = null; }
 
 function inspectFolder(path) {
   const normalized = normalizePath(path);
@@ -449,22 +449,15 @@ async function openItem(item) {
   }
   if (item.type === 'file') {
     await withCatch(() => store.previewEntry(item));
-    return;
   }
 }
 
 function toggleSelection(item) {
   if (!item || item.type !== 'file') return;
-  if (uiState.selectedIds.includes(item.id)) {
-    uiState.selectedIds = uiState.selectedIds.filter((id) => id !== item.id);
-  } else {
-    uiState.selectedIds = [...uiState.selectedIds, item.id];
-  }
+  if (uiState.selectedIds.includes(item.id)) uiState.selectedIds = uiState.selectedIds.filter((id) => id !== item.id);
+  else uiState.selectedIds = [...uiState.selectedIds, item.id];
 }
-
-function clearSelection() {
-  uiState.selectedIds = [];
-}
+function clearSelection() { uiState.selectedIds = []; }
 
 async function syncSelected() {
   const targets = selectedEntries.value.filter((entry) => ['待上传', '待更新'].includes(entry.status));
@@ -472,9 +465,7 @@ async function syncSelected() {
     alert('当前选中的项目里没有需要上传或更新的文件。');
     return;
   }
-  for (const entry of targets) {
-    await withCatch(() => store.syncEntry(entry, { allowDelete: false }));
-  }
+  for (const entry of targets) await withCatch(() => store.syncEntry(entry, { allowDelete: false }));
 }
 
 async function withCatch(task) {
@@ -485,25 +476,17 @@ async function withCatch(task) {
   }
 }
 
-function openFileInput() {
-  fileInputRef.value?.click();
-}
-
+function openFileInput() { fileInputRef.value?.click(); }
 async function handleDirectoryChoice() {
-  if (store.directoryPickerSupported) {
-    await withCatch(() => store.chooseLocalDirectory());
-  } else {
-    openFileInput();
-  }
+  if (store.directoryPickerSupported) await withCatch(() => store.chooseLocalDirectory());
+  else openFileInput();
 }
-
 async function handleInputChange(event) {
   const files = event.target.files;
   if (!files?.length) return;
   await withCatch(() => store.loadLocalFromInput(files));
   event.target.value = '';
 }
-
 async function handleDrop(event) {
   event.preventDefault();
   dropActive.value = false;
@@ -511,38 +494,16 @@ async function handleDrop(event) {
   if (!files?.length) return;
   await withCatch(() => store.loadLocalFromInput(files));
 }
-
-function onDragEnter(event) {
-  event.preventDefault();
-  dropActive.value = true;
-}
-
-function onDragOver(event) {
-  event.preventDefault();
-  dropActive.value = true;
-}
-
-function onDragLeave(event) {
-  if (event.currentTarget === event.target) {
-    dropActive.value = false;
-  }
-}
-
-async function handleSingleSync(entry) {
-  await withCatch(() => store.syncEntry(entry, { allowDelete: false }));
-}
+function onDragEnter(event) { event.preventDefault(); dropActive.value = true; }
+function onDragOver(event) { event.preventDefault(); dropActive.value = true; }
+function onDragLeave(event) { if (event.currentTarget === event.target) dropActive.value = false; }
+async function handleSingleSync(entry) { await withCatch(() => store.syncEntry(entry, { allowDelete: false })); }
 
 async function handleDeleteRemote(entry) {
   const confirmed = window.confirm(`确认删除远端文件：${entry.relativePath} ？`);
   if (!confirmed) return;
   uiState.trashRecords = [
-    {
-      name: entry.name,
-      path: entry.relativePath,
-      size: entry.size || 0,
-      deletedAt: Date.now(),
-      sourceLabel: entry.sourceLabel,
-    },
+    { name: entry.name, path: entry.relativePath, size: entry.size || 0, deletedAt: Date.now(), sourceLabel: entry.sourceLabel },
     ...uiState.trashRecords.filter((item) => item.path !== entry.relativePath),
   ].slice(0, 100);
   await withCatch(() => store.syncEntry(entry, { allowDelete: true }));
@@ -608,12 +569,7 @@ function handleItemContextMenu({ event, item }) {
       x: event.clientX,
       y: event.clientY,
       title: item.name,
-      items: [
-        {
-          label: '从回收区移除记录',
-          action: () => Promise.resolve((uiState.trashRecords = uiState.trashRecords.filter((record) => record.path !== item.path))),
-        },
-      ],
+      items: [{ label: '从回收区移除记录', action: () => Promise.resolve((uiState.trashRecords = uiState.trashRecords.filter((record) => record.path !== item.path))) }],
     });
     return;
   }
@@ -642,49 +598,149 @@ function handleNavSelect(section) {
   }
 }
 
+function updateScrollProgress() {
+  const scrollable = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+  scrollProgress.value = Math.min(0.999, window.scrollY / scrollable);
+}
+
+function handleAmbientMove(event) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const x = (event.clientX - rect.left) / rect.width;
+  const y = (event.clientY - rect.top) / rect.height;
+  ambientValues.temperature = 21 + x * 7;
+  ambientValues.humidity = 38 + (1 - y) * 28;
+  ambientValues.light = 24 + (1 - y) * 60;
+}
+
+function resetAmbient() {
+  ambientValues.temperature = 24;
+  ambientValues.humidity = 46;
+  ambientValues.light = activeSceneIndex.value === 3 ? 18 : 72 - activeSceneIndex.value * 10;
+}
+
+function resizeCanvas() {
+  const canvas = backgroundCanvas.value;
+  if (!canvas) return;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(window.innerWidth * ratio);
+  canvas.height = Math.floor(window.innerHeight * ratio);
+  canvas.style.width = `${window.innerWidth}px`;
+  canvas.style.height = `${window.innerHeight}px`;
+  const count = Math.max(32, Math.floor(window.innerWidth / 28));
+  particles = Array.from({ length: count }, () => ({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    r: ratio * (0.7 + Math.random() * 1.9),
+    vx: ratio * (0.03 + Math.random() * 0.12),
+    vy: ratio * (0.01 + Math.random() * 0.05),
+    alpha: 0.08 + Math.random() * 0.18,
+  }));
+}
+
+function particleColor(sceneId) {
+  switch (sceneId) {
+    case 'dawn': return '242, 229, 210';
+    case 'noon': return '250, 240, 226';
+    case 'dusk': return '235, 191, 150';
+    case 'night': return '208, 196, 212';
+    default: return '242, 229, 210';
+  }
+}
+
+function animateCanvas() {
+  const canvas = backgroundCanvas.value;
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const rgb = particleColor(activeScene.value.id);
+  for (const particle of particles) {
+    particle.x += particle.vx;
+    particle.y += particle.vy;
+    if (particle.x > canvas.width + 12) particle.x = -12;
+    if (particle.y > canvas.height + 12) particle.y = -12;
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(${rgb}, ${particle.alpha})`;
+    ctx.arc(particle.x, particle.y, particle.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  animationFrameId = window.requestAnimationFrame(animateCanvas);
+}
+
 function handleGlobalKey(event) {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault();
     document.querySelector('.global-search-input')?.focus();
   }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === ',') {
+    event.preventDefault();
+    openSettings('repo');
+  }
   if (event.key === 'Escape') {
     closeContextMenu();
     userMenuOpen.value = false;
+    if (uiState.settingsOpen) closeSettings();
   }
 }
+
+watch(activeSceneIndex, () => {
+  if (!dropActive.value) resetAmbient();
+});
 
 onMounted(() => {
   store.bootstrap();
   inspectFolder('');
+  updateScrollProgress();
+  resetAmbient();
+  resizeCanvas();
+  animateCanvas();
   window.addEventListener('click', closeContextMenu);
   window.addEventListener('scroll', closeContextMenu, true);
+  window.addEventListener('scroll', updateScrollProgress, { passive: true });
   window.addEventListener('resize', closeContextMenu);
+  window.addEventListener('resize', resizeCanvas);
   window.addEventListener('keydown', handleGlobalKey);
 });
 
 onBeforeUnmount(() => {
+  window.cancelAnimationFrame(animationFrameId);
   window.removeEventListener('click', closeContextMenu);
   window.removeEventListener('scroll', closeContextMenu, true);
+  window.removeEventListener('scroll', updateScrollProgress);
   window.removeEventListener('resize', closeContextMenu);
+  window.removeEventListener('resize', resizeCanvas);
   window.removeEventListener('keydown', handleGlobalKey);
 });
 </script>
 
 <template>
-  <div class="app-shell app-drive-shell" @contextmenu.self.prevent>
+  <div class="app-shell dream-shell" :data-scene="activeScene.id" :style="pageStyle" @contextmenu.self.prevent>
+    <div class="atmosphere-layer">
+      <canvas ref="backgroundCanvas" class="dust-canvas"></canvas>
+      <div class="curtain-overlay"></div>
+      <div class="light-gradient"></div>
+    </div>
+
     <input ref="fileInputRef" class="hidden-input" type="file" multiple webkitdirectory @change="handleInputChange" />
 
-    <header class="topbar">
+    <header class="topbar dream-topbar">
       <div class="brand-block">
-        <div class="brand-logo">GN</div>
+        <button class="sidebar-toggle" @click="uiState.sidebarCollapsed = !uiState.sidebarCollapsed"><AppIcon :name="uiState.sidebarCollapsed ? 'menu' : 'close'" :size="18" /></button>
+        <div class="brand-logo">
+          <span class="logo-glow"></span>
+          <span class="logo-orbit orbit-a"></span>
+          <span class="logo-orbit orbit-b"></span>
+          <span class="logo-core"><AppIcon name="sparkle" :size="18" /></span>
+        </div>
         <div class="brand-copy">
           <strong>GitNovelBox</strong>
-          <span>GitHub 私有小说网盘</span>
+          <span>暖光里的 GitHub 私有网盘 · 像一本被慢慢翻开的杂志</span>
         </div>
       </div>
 
-      <div class="global-search-shell">
-        <span class="global-search-icon">⌘K</span>
+      <div class="global-search-shell dream-search-shell">
+        <span class="global-search-icon"><AppIcon name="search" :size="16" /></span>
+        <span class="global-search-shortcut">⌘K</span>
         <input v-model.trim="store.state.searchQuery" class="global-search-input" type="search" placeholder="全局搜索：书名、路径、状态、本地/远端" />
       </div>
 
@@ -696,26 +752,26 @@ onBeforeUnmount(() => {
         </div>
 
         <button class="user-menu-button" @click.stop="userMenuOpen = !userMenuOpen">
-          <span class="avatar-badge">{{ (store.state.settings.owner || 'G').slice(0, 1).toUpperCase() }}</span>
-          <span class="user-menu-text">用户菜单</span>
+          <span class="avatar-badge"><AppIcon name="settings" :size="15" /></span>
+          <span class="user-menu-text">设置</span>
         </button>
 
         <div v-if="userMenuOpen" class="user-menu" @click.stop>
-          <button @click="withCatch(() => store.validateRepo())">重新校验仓库</button>
-          <button @click="withCatch(() => store.loadRemoteTree())">刷新远端树</button>
-          <button @click="store.clearLogs()">清空日志</button>
+          <button @click="openSettings('repo')">打开设置</button>
+          <button @click="openSettings('stats')">查看统计</button>
+          <button @click="openSettings('logs')">查看日志</button>
           <button @click="uiState.drawerOpen = !uiState.drawerOpen">{{ uiState.drawerOpen ? '收起属性抽屉' : '打开属性抽屉' }}</button>
         </div>
       </div>
     </header>
 
-    <main class="drive-layout">
-      <aside class="drive-sidebar">
-        <section class="card nav-card">
-          <div class="section-head compact-head">
+    <main class="drive-layout" :class="{ 'sidebar-collapsed': uiState.sidebarCollapsed }">
+      <aside class="drive-sidebar warm-sidebar" :class="{ 'is-collapsed': uiState.sidebarCollapsed }">
+        <section class="card nav-card warm-nav-card">
+          <div class="section-head compact-head nav-card-head">
             <div>
-              <h2>网盘导航</h2>
-              <p class="muted">切换不同视图和工作区</p>
+              <h2>导航</h2>
+              <p class="muted">收起时保留图标，展开时显示目录与分组。</p>
             </div>
           </div>
 
@@ -727,7 +783,7 @@ onBeforeUnmount(() => {
               :class="{ active: uiState.navSection === item.key }"
               @click="handleNavSelect(item.key)"
             >
-              <span class="drive-nav-icon">{{ item.icon }}</span>
+              <span class="drive-nav-icon"><AppIcon :name="item.icon" :size="18" /></span>
               <span class="drive-nav-label">{{ item.label }}</span>
               <span class="drive-nav-count">{{ item.count }}</span>
             </button>
@@ -735,56 +791,105 @@ onBeforeUnmount(() => {
         </section>
 
         <DirectoryTree
+          v-if="!uiState.sidebarCollapsed"
           :tree="store.directoryTree.value"
           :selected-folder="store.state.selectedFolder"
           @select="navigateFolder"
           @contextmenu="handleTreeContextMenu"
         />
-
-        <RepoConfigPanel
-          :settings="store.state.settings"
-          :connection="store.state.connection"
-          :busy="store.state.busy"
-          :directory-picker-supported="store.directoryPickerSupported"
-          @save="store.persistSettings"
-          @validate="() => withCatch(() => store.validateRepo())"
-        />
-
-        <StatsPanel
-          :entries="store.mergedEntries.value"
-          :visible-entries="visibleMetricsEntries"
-          :metrics-history="store.state.metricsHistory"
-          :pending-count="store.pendingCount.value"
-          :remote-only-count="store.remoteOnlyCount.value"
-          :last-sync-summary="store.state.lastSyncSummary"
-          :format-bytes="store.formatBytes"
-          :format-date-time="store.formatDateTime"
-        />
       </aside>
 
-      <section class="drive-main">
-        <section class="card workspace-hero">
-          <div>
-            <p class="eyebrow">资源管理器</p>
-            <h1>{{ headerSummary.title }}</h1>
-            <p class="muted workspace-text">{{ headerSummary.description }}</p>
-          </div>
-          <div class="workspace-highlights">
-            <span class="pill pill-muted">v{{ __APP_VERSION__ }}</span>
-            <span class="pill pill-accent">当前视图 {{ explorerItems.length }} 项</span>
-            <span class="pill pill-muted">可见文件 {{ visibleMetricsEntries.length }} 个</span>
-            <span class="pill pill-muted">可见大小 {{ store.formatBytes(visibleMetricsEntries.reduce((sum, entry) => sum + (entry.size || 0), 0)) }}</span>
+      <section class="drive-main dream-main">
+        <section class="card ambient-stage-card">
+          <div class="ambient-stage-grid">
+            <div class="story-column">
+              <p class="eyebrow">主界面只保留导航与网盘</p>
+              <h1>{{ activeScene.title }}</h1>
+              <p class="muted workspace-text">{{ activeScene.description }}</p>
+
+              <div class="scene-tabs">
+                <button
+                  v-for="(scene, index) in sceneDefinitions"
+                  :key="scene.id"
+                  class="scene-tab"
+                  :class="{ active: index === activeSceneIndex }"
+                  @click="setScene(index)"
+                >
+                  {{ scene.label }}
+                </button>
+                <button class="scene-tab reset-tab" :class="{ active: uiState.timeOverride === null }" @click="clearSceneOverride">跟随滚动</button>
+              </div>
+
+              <div class="scene-narrative-grid">
+                <article class="narrative-card">
+                  <span class="narrative-label">阅读</span>
+                  <strong>书页边缘被暖灰色的光轻轻抬起。</strong>
+                  <p>全局搜索始终在上方，像熟悉的视线，而不是命令行。</p>
+                </article>
+                <article class="narrative-card">
+                  <span class="narrative-label">沐浴</span>
+                  <strong>信息被收进抽屉，界面只留下松弛和流动。</strong>
+                  <p>配置、统计和日志都进入设置菜单，不再占据主场景。</p>
+                </article>
+                <article class="narrative-card">
+                  <span class="narrative-label">睡眠</span>
+                  <strong>深夜模式更静，属性面板像床头抽屉一样滑出。</strong>
+                  <p>右侧保留文件属性，帮助你在安静里确认最后一个动作。</p>
+                </article>
+              </div>
+            </div>
+
+            <div class="ambient-column">
+              <div class="light-bridge"></div>
+              <div class="ambient-demo" @mousemove="handleAmbientMove" @mouseleave="resetAmbient">
+                <div class="ambient-demo-copy">
+                  <span class="eyebrow">看不见的控制</span>
+                  <strong>把鼠标在这里移动，温度、湿度和光照会像空间本身一样变化。</strong>
+                  <p class="muted">默认只保留体验文案，技术参数收进折叠卡片里。</p>
+                </div>
+                <div class="ambient-reading">{{ activeScene.label }}</div>
+              </div>
+
+              <button class="fold-card" :class="{ open: uiState.techOpen }" @click="uiState.techOpen = !uiState.techOpen">
+                <div>
+                  <span class="eyebrow">气候卡片</span>
+                  <strong>{{ uiState.techOpen ? '收起技术参数' : '展开技术参数' }}</strong>
+                </div>
+                <span>{{ uiState.techOpen ? '－' : '＋' }}</span>
+              </button>
+
+              <transition name="soft-fade">
+                <div v-if="uiState.techOpen" class="ambient-metrics-grid">
+                  <article v-for="item in sceneMetaCards" :key="item.label" class="ambient-metric-card">
+                    <span class="muted">{{ item.label }}</span>
+                    <strong>{{ item.value }}</strong>
+                    <small>{{ item.hint }}</small>
+                  </article>
+                </div>
+              </transition>
+            </div>
           </div>
         </section>
 
         <section
-          class="card explorer-toolbar-card"
+          class="card explorer-toolbar-card warm-toolbar-card"
           :class="{ 'drop-active': dropActive }"
           @dragenter="onDragEnter"
           @dragover="onDragOver"
           @dragleave="onDragLeave"
           @drop="handleDrop"
         >
+          <div class="section-title-row toolbar-title-row">
+            <div>
+              <h2>{{ headerSummary.title }}</h2>
+              <p class="muted">{{ headerSummary.description }}</p>
+            </div>
+            <div class="table-summary-badges">
+              <span class="pill pill-muted">{{ explorerItems.length }} 项</span>
+              <span class="pill pill-accent">{{ store.formatBytes(visibleMetricsEntries.reduce((sum, entry) => sum + (entry.size || 0), 0)) }}</span>
+            </div>
+          </div>
+
           <div class="toolbar-row top-actions-row">
             <div class="toolbar-actions-group">
               <button class="button button-primary" :disabled="store.state.busy" @click="handleDirectoryChoice">选择本地目录</button>
@@ -792,7 +897,6 @@ onBeforeUnmount(() => {
               <button class="button" :disabled="store.state.busy" @click="() => withCatch(() => store.loadRemoteTree())">刷新远端</button>
               <button class="button button-success" :disabled="store.state.busy" @click="() => withCatch(() => store.syncAll())">一键同步</button>
               <button class="button" :disabled="!uiState.selectedIds.length" @click="syncSelected">同步选中 {{ uiState.selectedIds.length }}</button>
-              <button class="button ghost-button" :disabled="!uiState.selectedIds.length" @click="clearSelection">清空勾选</button>
             </div>
             <div class="toolbar-actions-group right-group">
               <button class="view-mode-button" :class="{ active: store.state.viewMode === 'list' }" @click="store.state.viewMode = 'list'">列表</button>
@@ -803,13 +907,8 @@ onBeforeUnmount(() => {
           <div class="toolbar-row filter-row">
             <div class="control-stack grow">
               <label class="field-label">当前位置</label>
-              <div class="breadcrumb-bar">
-                <button
-                  v-for="crumb in breadcrumbs"
-                  :key="crumb.path || 'root'"
-                  class="breadcrumb-button"
-                  @click="navigateFolder(crumb.path)"
-                >
+              <div class="breadcrumb-bar warm-breadcrumb-bar">
+                <button v-for="crumb in breadcrumbs" :key="crumb.path || 'root'" class="breadcrumb-button" @click="navigateFolder(crumb.path)">
                   {{ crumb.label }}
                 </button>
               </div>
@@ -888,13 +987,11 @@ onBeforeUnmount(() => {
           @contextmenu="handleItemContextMenu"
           @favorite="toggleFavorite"
         />
-
-        <LogPanel :logs="store.state.logs" :format-date-time="store.formatDateTime" @clear="store.clearLogs" />
       </section>
     </main>
 
     <transition name="drawer-slide">
-      <aside v-if="uiState.drawerOpen" class="inspector-drawer" @click.stop>
+      <aside v-if="uiState.drawerOpen" class="inspector-drawer warm-inspector" @click.stop>
         <div class="drawer-header">
           <div>
             <p class="eyebrow">属性抽屉</p>
@@ -906,9 +1003,9 @@ onBeforeUnmount(() => {
               :disabled="!store.state.selectedItem.path && !store.state.selectedEntryId"
               @click="toggleFavorite(store.state.selectedItem.type === 'file' ? store.selectedEntry.value : store.state.selectedItem)"
             >
-              {{ isFavorite(store.state.selectedItem.type === 'file' ? store.state.selectedItem.path : store.state.selectedItem.path) ? '★' : '☆' }}
+              <AppIcon :name="isFavorite(store.state.selectedItem.type === 'file' ? store.state.selectedItem.path : store.state.selectedItem.path) ? 'favorites' : 'dot'" :size="16" />
             </button>
-            <button class="icon-button" @click="closeInspector">✕</button>
+            <button class="icon-button" @click="closeInspector"><AppIcon name="close" :size="16" /></button>
           </div>
         </div>
 
@@ -925,7 +1022,60 @@ onBeforeUnmount(() => {
       </aside>
     </transition>
 
-    <footer class="drive-footer">
+    <transition name="soft-fade">
+      <div v-if="uiState.settingsOpen" class="settings-modal-shell" @click.self="closeSettings">
+        <section class="settings-modal card">
+          <div class="settings-modal-head">
+            <div>
+              <p class="eyebrow">设置菜单</p>
+              <h2>把配置、统计和日志放回幕后</h2>
+              <p class="muted">主界面只留下导航、目录与网盘内容；其余信息都安静地收在这里。</p>
+            </div>
+            <button class="icon-button" @click="closeSettings"><AppIcon name="close" :size="16" /></button>
+          </div>
+
+          <div class="settings-tabs">
+            <button
+              v-for="tab in settingsTabs"
+              :key="tab.key"
+              class="settings-tab"
+              :class="{ active: uiState.activeSettingsTab === tab.key }"
+              @click="uiState.activeSettingsTab = tab.key"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
+
+          <div class="settings-content">
+            <RepoConfigPanel
+              v-if="uiState.activeSettingsTab === 'repo'"
+              :settings="store.state.settings"
+              :connection="store.state.connection"
+              :busy="store.state.busy"
+              :directory-picker-supported="store.directoryPickerSupported"
+              @save="store.persistSettings"
+              @validate="() => withCatch(() => store.validateRepo())"
+            />
+
+            <StatsPanel
+              v-else-if="uiState.activeSettingsTab === 'stats'"
+              :entries="store.mergedEntries.value"
+              :visible-entries="visibleMetricsEntries"
+              :metrics-history="store.state.metricsHistory"
+              :pending-count="store.pendingCount.value"
+              :remote-only-count="store.remoteOnlyCount.value"
+              :last-sync-summary="store.state.lastSyncSummary"
+              :format-bytes="store.formatBytes"
+              :format-date-time="store.formatDateTime"
+            />
+
+            <LogPanel v-else :logs="store.state.logs" :format-date-time="store.formatDateTime" @clear="store.clearLogs" />
+          </div>
+        </section>
+      </div>
+    </transition>
+
+    <footer class="drive-footer warm-footer">
       <span>{{ store.state.settings.owner || '-' }}/{{ store.state.settings.repo || '-' }} @ {{ store.state.settings.branch || '-' }}</span>
       <span>前缀：{{ store.state.settings.repoPrefix || 'books' }}</span>
       <span>本地 {{ store.state.localFiles.length }} 项</span>
