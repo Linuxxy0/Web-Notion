@@ -1,0 +1,479 @@
+--- /mnt/data/original_App.vue	2026-03-26 13:55:02.778753025 +0000
++++ /mnt/data/App.vue	2026-03-26 13:52:56.794293561 +0000
+@@ -626,14 +626,14 @@
+   canvas.height = Math.floor(window.innerHeight * ratio);
+   canvas.style.width = `${window.innerWidth}px`;
+   canvas.style.height = `${window.innerHeight}px`;
+-  const count = Math.max(32, Math.floor(window.innerWidth / 28));
++  const count = Math.max(12, Math.floor(window.innerWidth / 90));
+   particles = Array.from({ length: count }, () => ({
+     x: Math.random() * canvas.width,
+     y: Math.random() * canvas.height,
+-    r: ratio * (0.7 + Math.random() * 1.9),
+-    vx: ratio * (0.03 + Math.random() * 0.12),
+-    vy: ratio * (0.01 + Math.random() * 0.05),
+-    alpha: 0.08 + Math.random() * 0.18,
++    r: ratio * (0.6 + Math.random() * 1.2),
++    vx: ratio * (0.008 + Math.random() * 0.03),
++    vy: ratio * (0.004 + Math.random() * 0.02),
++    alpha: 0.03 + Math.random() * 0.08,
+   }));
+ }
+ 
+@@ -690,13 +690,11 @@
+ onMounted(() => {
+   store.bootstrap();
+   inspectFolder('');
+-  updateScrollProgress();
+   resetAmbient();
+   resizeCanvas();
+   animateCanvas();
+   window.addEventListener('click', closeContextMenu);
+   window.addEventListener('scroll', closeContextMenu, true);
+-  window.addEventListener('scroll', updateScrollProgress, { passive: true });
+   window.addEventListener('resize', closeContextMenu);
+   window.addEventListener('resize', resizeCanvas);
+   window.addEventListener('keydown', handleGlobalKey);
+@@ -706,7 +704,6 @@
+   window.cancelAnimationFrame(animationFrameId);
+   window.removeEventListener('click', closeContextMenu);
+   window.removeEventListener('scroll', closeContextMenu, true);
+-  window.removeEventListener('scroll', updateScrollProgress);
+   window.removeEventListener('resize', closeContextMenu);
+   window.removeEventListener('resize', resizeCanvas);
+   window.removeEventListener('keydown', handleGlobalKey);
+@@ -734,7 +731,7 @@
+         </div>
+         <div class="brand-copy">
+           <strong>GitNovelBox</strong>
+-          <span>暖光里的 GitHub 私有网盘 · 像一本被慢慢翻开的杂志</span>
++          <span>更克制的私有网盘界面 · 保留目录、搜索与同步</span>
+         </div>
+       </div>
+ 
+@@ -758,8 +755,8 @@
+ 
+         <div v-if="userMenuOpen" class="user-menu" @click.stop>
+           <button @click="openSettings('repo')">打开设置</button>
+-          <button @click="openSettings('stats')">查看统计</button>
+-          <button @click="openSettings('logs')">查看日志</button>
++          <button @click="openSettings('stats')">统计与日志</button>
++          <button @click="openSettings('logs')">运行日志</button>
+           <button @click="uiState.drawerOpen = !uiState.drawerOpen">{{ uiState.drawerOpen ? '收起属性抽屉' : '打开属性抽屉' }}</button>
+         </div>
+       </div>
+@@ -800,74 +797,19 @@
+       </aside>
+ 
+       <section class="drive-main dream-main">
+-        <section class="card ambient-stage-card">
+-          <div class="ambient-stage-grid">
+-            <div class="story-column">
+-              <p class="eyebrow">主界面只保留导航与网盘</p>
+-              <h1>{{ activeScene.title }}</h1>
+-              <p class="muted workspace-text">{{ activeScene.description }}</p>
+-
+-              <div class="scene-tabs">
+-                <button
+-                  v-for="(scene, index) in sceneDefinitions"
+-                  :key="scene.id"
+-                  class="scene-tab"
+-                  :class="{ active: index === activeSceneIndex }"
+-                  @click="setScene(index)"
+-                >
+-                  {{ scene.label }}
+-                </button>
+-                <button class="scene-tab reset-tab" :class="{ active: uiState.timeOverride === null }" @click="clearSceneOverride">跟随滚动</button>
+-              </div>
+-
+-              <div class="scene-narrative-grid">
+-                <article class="narrative-card">
+-                  <span class="narrative-label">阅读</span>
+-                  <strong>书页边缘被暖灰色的光轻轻抬起。</strong>
+-                  <p>全局搜索始终在上方，像熟悉的视线，而不是命令行。</p>
+-                </article>
+-                <article class="narrative-card">
+-                  <span class="narrative-label">沐浴</span>
+-                  <strong>信息被收进抽屉，界面只留下松弛和流动。</strong>
+-                  <p>配置、统计和日志都进入设置菜单，不再占据主场景。</p>
+-                </article>
+-                <article class="narrative-card">
+-                  <span class="narrative-label">睡眠</span>
+-                  <strong>深夜模式更静，属性面板像床头抽屉一样滑出。</strong>
+-                  <p>右侧保留文件属性，帮助你在安静里确认最后一个动作。</p>
+-                </article>
+-              </div>
+-            </div>
+-
+-            <div class="ambient-column">
+-              <div class="light-bridge"></div>
+-              <div class="ambient-demo" @mousemove="handleAmbientMove" @mouseleave="resetAmbient">
+-                <div class="ambient-demo-copy">
+-                  <span class="eyebrow">看不见的控制</span>
+-                  <strong>把鼠标在这里移动，温度、湿度和光照会像空间本身一样变化。</strong>
+-                  <p class="muted">默认只保留体验文案，技术参数收进折叠卡片里。</p>
+-                </div>
+-                <div class="ambient-reading">{{ activeScene.label }}</div>
+-              </div>
++        <section class="card workspace-overview-card compact-overview-card">
++          <div class="workspace-overview-copy">
++            <p class="eyebrow">轻量网盘主界面</p>
++            <h1>目录、搜索、同步，保持在同一视线里。</h1>
++            <p class="muted workspace-overview-text">
++              主页不再放大叙事和动态信息，只保留网盘常用操作。统计、日志与连接配置都收进设置面板里，界面会更像常见网盘而不是展示页。
++            </p>
++          </div>
+ 
+-              <button class="fold-card" :class="{ open: uiState.techOpen }" @click="uiState.techOpen = !uiState.techOpen">
+-                <div>
+-                  <span class="eyebrow">气候卡片</span>
+-                  <strong>{{ uiState.techOpen ? '收起技术参数' : '展开技术参数' }}</strong>
+-                </div>
+-                <span>{{ uiState.techOpen ? '－' : '＋' }}</span>
+-              </button>
+-
+-              <transition name="soft-fade">
+-                <div v-if="uiState.techOpen" class="ambient-metrics-grid">
+-                  <article v-for="item in sceneMetaCards" :key="item.label" class="ambient-metric-card">
+-                    <span class="muted">{{ item.label }}</span>
+-                    <strong>{{ item.value }}</strong>
+-                    <small>{{ item.hint }}</small>
+-                  </article>
+-                </div>
+-              </transition>
+-            </div>
++          <div class="workspace-overview-actions">
++            <button class="button button-primary" @click="openSettings('repo')">打开设置</button>
++            <button class="button" @click="openSettings('stats')">统计与日志</button>
++            <button class="button" @click="uiState.drawerOpen = !uiState.drawerOpen">{{ uiState.drawerOpen ? '收起属性栏' : '打开属性栏' }}</button>
+           </div>
+         </section>
+ 
+@@ -884,10 +826,7 @@
+               <h2>{{ headerSummary.title }}</h2>
+               <p class="muted">{{ headerSummary.description }}</p>
+             </div>
+-            <div class="table-summary-badges">
+-              <span class="pill pill-muted">{{ explorerItems.length }} 项</span>
+-              <span class="pill pill-accent">{{ store.formatBytes(visibleMetricsEntries.reduce((sum, entry) => sum + (entry.size || 0), 0)) }}</span>
+-            </div>
++
+           </div>
+ 
+           <div class="toolbar-row top-actions-row">
+@@ -959,12 +898,9 @@
+             </div>
+           </div>
+ 
+-          <div class="summary-row">
++          <div class="summary-row compact-summary-row">
+             <span class="summary-chip">本地目录：{{ store.state.localSourceLabel }}</span>
+-            <span class="summary-chip">待同步 {{ store.pendingCount.value }}</span>
+-            <span class="summary-chip">仅远端 {{ store.remoteOnlyCount.value }}</span>
+-            <span class="summary-chip">收藏 {{ uiState.favoritePaths.length }}</span>
+-            <span class="summary-chip">最近 {{ uiState.recentItems.length }}</span>
++            <span class="summary-chip">当前 {{ store.state.viewMode === 'cards' ? '卡片视图' : '列表视图' }}</span>
+             <span class="summary-chip busy-chip" :class="{ active: store.state.busy }">{{ store.state.busy ? store.state.busyLabel || '处理中...' : '空闲' }}</span>
+           </div>
+         </section>
+@@ -1075,11 +1011,9 @@
+       </div>
+     </transition>
+ 
+-    <footer class="drive-footer warm-footer">
++    <footer class="drive-footer warm-footer compact-footer">
+       <span>{{ store.state.settings.owner || '-' }}/{{ store.state.settings.repo || '-' }} @ {{ store.state.settings.branch || '-' }}</span>
+       <span>前缀：{{ store.state.settings.repoPrefix || 'books' }}</span>
+-      <span>本地 {{ store.state.localFiles.length }} 项</span>
+-      <span>远端 {{ store.state.remoteFiles.length }} 项</span>
+       <span>{{ store.state.viewMode === 'cards' ? '卡片视图' : '列表视图' }}</span>
+     </footer>
+ 
+--- /mnt/data/original_styles.css	2026-03-26 13:55:08.842932767 +0000
++++ /mnt/data/styles.css	2026-03-26 13:54:49.324024464 +0000
+@@ -1492,3 +1492,285 @@
+     font-size: 20px;
+   }
+ }
++
++/* --- compact webdisk tuning --- */
++.dust-canvas {
++  opacity: 0.32;
++}
++.curtain-overlay {
++  opacity: 0.28;
++}
++.light-gradient {
++  opacity: 0.45;
++}
++.app-shell {
++  padding: 16px !important;
++}
++.topbar.dream-topbar {
++  grid-template-columns: 220px minmax(280px, 1fr) auto !important;
++  gap: 12px;
++  padding: 12px 14px;
++  min-height: 68px;
++}
++.brand-block {
++  gap: 10px;
++}
++.brand-logo {
++  width: 42px;
++  height: 42px;
++  border-radius: 14px;
++}
++.logo-glow {
++  inset: 10px;
++}
++.orbit-a {
++  inset: 5px 8px;
++  animation-duration: 18s;
++}
++.orbit-b {
++  inset: 8px 5px;
++  animation-duration: 22s;
++}
++.sidebar-toggle {
++  width: 36px;
++  height: 36px;
++  border-radius: 12px;
++}
++.brand-copy {
++  gap: 0;
++}
++.brand-copy strong {
++  font-size: 13px !important;
++  letter-spacing: 0.14em;
++}
++.brand-copy span {
++  font-family: Inter, 'PingFang SC', sans-serif !important;
++  font-size: 12px !important;
++  line-height: 1.45;
++}
++.global-search-shell.dream-search-shell,
++.repo-status-pill,
++.user-menu-button {
++  min-height: 40px;
++  border-radius: 14px;
++}
++.global-search-shell {
++  padding: 0 10px;
++}
++.global-search-input {
++  font-size: 13px;
++}
++.global-search-shortcut {
++  min-width: 34px;
++  height: 24px;
++  font-size: 10px;
++}
++.repo-status-pill {
++  gap: 8px;
++  padding: 0 12px;
++}
++.repo-status-pill strong,
++.repo-status-pill span,
++.user-menu-text,
++.field-label {
++  font-size: 12px;
++}
++.user-menu {
++  min-width: 180px;
++  border-radius: 14px;
++}
++.user-menu button {
++  font-size: 13px;
++  padding: 10px 12px;
++}
++.drive-layout {
++  grid-template-columns: 250px minmax(0, 1fr) !important;
++  gap: 16px !important;
++}
++.drive-layout.sidebar-collapsed {
++  grid-template-columns: 76px minmax(0, 1fr) !important;
++}
++.drive-main,
++.drive-sidebar {
++  gap: 14px;
++}
++.card,
++.drawer-panel,
++.inspector-drawer,
++.settings-modal {
++  border-radius: 20px !important;
++}
++.nav-card {
++  padding: 12px;
++}
++.drive-nav-item {
++  min-height: 44px;
++  border-radius: 14px;
++  grid-template-columns: 32px 1fr auto;
++}
++.drive-nav-icon {
++  width: 32px;
++  height: 32px;
++  border-radius: 10px;
++}
++.drive-nav-label {
++  font-family: Inter, 'PingFang SC', sans-serif !important;
++  font-size: 14px;
++  font-weight: 600;
++}
++.drive-nav-count {
++  font-size: 12px;
++}
++.compact-overview-card {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 14px;
++  padding: 16px 18px !important;
++  background: linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,252,248,0.34));
++}
++.workspace-overview-copy {
++  display: grid;
++  gap: 8px;
++  max-width: 72ch;
++}
++.compact-overview-card h1 {
++  margin: 0;
++  max-width: none;
++  font-size: clamp(22px, 2.4vw, 30px) !important;
++  line-height: 1.2;
++  letter-spacing: 0.02em;
++  font-weight: 500;
++}
++.workspace-overview-text {
++  font-size: 13px !important;
++  line-height: 1.6;
++}
++.workspace-overview-actions {
++  display: flex;
++  align-items: center;
++  justify-content: flex-end;
++  flex-wrap: wrap;
++  gap: 8px;
++  min-width: 240px;
++}
++.explorer-toolbar-card {
++  padding: 16px 18px !important;
++}
++.toolbar-title-row {
++  margin-bottom: 12px;
++}
++.section-title-row h2,
++.drawer-header h2,
++.settings-modal-head h2 {
++  font-size: 18px;
++}
++.section-title-row p,
++.settings-modal-head p,
++.workspace-text {
++  font-size: 13px !important;
++  line-height: 1.6;
++}
++.toolbar-row {
++  gap: 10px;
++}
++.grid-controls-row {
++  gap: 10px;
++}
++.button,
++.view-mode-button,
++.mini-button,
++.icon-button,
++.select-input,
++input[type='text'],
++input[type='password'],
++input[type='number'] {
++  min-height: 38px;
++  border-radius: 12px;
++  font-size: 13px;
++}
++.button,
++.view-mode-button {
++  padding: 0 12px;
++}
++.select-input {
++  padding: 0 34px 0 12px;
++}
++.breadcrumb-bar,
++.drop-hint-box,
++.summary-chip,
++.pill,
++.status-badge {
++  border-radius: 12px;
++}
++.breadcrumb-button,
++.summary-chip,
++.pill {
++  font-size: 12px;
++}
++.compact-summary-row {
++  margin-top: 10px;
++}
++.compact-summary-row .summary-chip:not(.busy-chip) {
++  color: #6f6256;
++}
++.table-summary-badges,
++.summary-row .summary-chip:nth-child(n+4) {
++  display: none;
++}
++.inspector-drawer.warm-inspector {
++  width: min(360px, 92vw);
++  padding: 16px;
++}
++.settings-modal {
++  width: min(1000px, 95vw);
++  padding: 18px;
++}
++.settings-tabs {
++  gap: 8px;
++  margin-bottom: 14px;
++}
++.settings-tab {
++  min-height: 36px;
++  padding: 0 12px;
++  font-size: 13px;
++}
++.drive-footer.warm-footer.compact-footer {
++  margin-top: 12px;
++  padding: 8px 12px;
++  gap: 10px;
++  font-size: 12px;
++}
++@media (max-width: 1100px) {
++  .compact-overview-card {
++    flex-direction: column;
++    align-items: flex-start;
++  }
++  .workspace-overview-actions {
++    min-width: 0;
++    justify-content: flex-start;
++  }
++}
++@media (max-width: 980px) {
++  .topbar.dream-topbar {
++    grid-template-columns: 1fr !important;
++  }
++  .drive-layout,
++  .drive-layout.sidebar-collapsed {
++    grid-template-columns: 1fr !important;
++  }
++}
++@media (max-width: 720px) {
++  .app-shell {
++    padding: 12px !important;
++  }
++  .compact-overview-card,
++  .explorer-toolbar-card,
++  .settings-modal {
++    padding: 14px !important;
++  }
++  .workspace-overview-actions,
++  .toolbar-actions-group {
++    width: 100%;
++  }
++}
