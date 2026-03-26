@@ -20,6 +20,7 @@ const emit = defineEmits(['preview-local', 'preview-remote', 'download', 'naviga
             <p class="muted mono">{{ inspector.type === 'folder' ? (inspector.path || '/') : inspector.relativePath }}</p>
           </div>
         </div>
+
         <div class="property-grid">
           <div class="property-item">
             <span class="property-label">类型</span>
@@ -42,11 +43,11 @@ const emit = defineEmits(['preview-local', 'preview-remote', 'download', 'naviga
             <strong>{{ inspector.sourceLabel }}</strong>
           </div>
           <div v-if="inspector.type === 'folder'" class="property-item">
-            <span class="property-label">内部文件数</span>
+            <span class="property-label">文件数</span>
             <strong>{{ inspector.fileCount }}</strong>
           </div>
           <div v-if="inspector.type === 'folder'" class="property-item">
-            <span class="property-label">直接子项数</span>
+            <span class="property-label">子项数</span>
             <strong>{{ inspector.childrenCount }}</strong>
           </div>
           <div v-if="inspector.type === 'folder'" class="property-item">
@@ -73,7 +74,7 @@ const emit = defineEmits(['preview-local', 'preview-remote', 'download', 'naviga
       </div>
 
       <div v-if="inspector.type === 'file'" class="drawer-section">
-        <div class="drawer-section-title">预览信息</div>
+        <div class="drawer-section-title">内容预览</div>
         <div class="preview-meta meta-stack">
           <span class="pill pill-muted">来源：{{ preview.source || '-' }}</span>
           <span class="pill pill-muted">编码：{{ preview.encoding || '-' }}</span>
@@ -85,7 +86,7 @@ const emit = defineEmits(['preview-local', 'preview-remote', 'download', 'naviga
       </div>
 
       <div v-else class="drawer-section">
-        <div class="drawer-section-title">文件夹摘要</div>
+        <div class="drawer-section-title">目录摘要</div>
         <div class="folder-hint-grid">
           <div class="folder-hint-card">
             <span class="property-label">总大小</span>
@@ -99,6 +100,6 @@ const emit = defineEmits(['preview-local', 'preview-remote', 'download', 'naviga
       </div>
     </template>
 
-    <div v-else class="empty-state">请选择一个文件或文件夹查看属性</div>
+    <div v-else class="empty-state">请选择一个文件或文件夹查看详情</div>
   </section>
 </template>

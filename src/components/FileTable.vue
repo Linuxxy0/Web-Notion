@@ -42,61 +42,58 @@ function onContextMenu(event, item) {
 </script>
 
 <template>
-  <section class="card explorer-card editorial-explorer-card">
-    <div class="section-title-row explorer-head editorial-head">
+  <section class="card explorer-card">
+    <div class="section-title-row explorer-head">
       <div>
-        <p class="eyebrow">资源管理器</p>
-        <h2>像翻阅目录，也像翻阅一本慢慢展开的杂志。</h2>
-        <p class="muted">文件夹优先显示。单击查看属性，双击打开，右键显示菜单。</p>
+        <h2>文件列表</h2>
+        <p class="muted">双击打开，单击查看属性，右键查看更多操作。</p>
       </div>
-      <div class="table-summary-badges editorial-badges">
+      <div class="table-summary-badges">
         <span class="pill pill-muted">{{ items.length }} 项</span>
         <span class="pill pill-muted">总大小 {{ formatBytes(visibleBytes) }}</span>
-        <span class="pill pill-accent">{{ viewMode === 'cards' ? '卡片视图' : '列表视图' }}</span>
+        <span class="pill">{{ viewMode === 'cards' ? '卡片视图' : '列表视图' }}</span>
       </div>
     </div>
 
     <div v-if="!items.length" class="empty-state large-empty-state">{{ emptyText }}</div>
 
-    <div v-else-if="viewMode === 'cards'" class="resource-card-grid editorial-card-grid">
+    <div v-else-if="viewMode === 'cards'" class="resource-card-grid">
       <article
         v-for="item in items"
         :key="item.id"
-        class="resource-card editorial-card"
+        class="resource-card"
         :class="{ selected: selectedItemId === item.id, folder: item.type === 'folder', trash: item.type === 'trash' }"
         @click="emit('select', item)"
         @dblclick="emit('open', item)"
         @contextmenu="onContextMenu($event, item)"
       >
-        <div class="editorial-card-cover">
-          <div class="editorial-card-topline">
-            <span class="editorial-category">{{ item.type === 'folder' ? 'Folder' : item.type === 'trash' ? 'Archive' : 'Text' }}</span>
-            <label v-if="canCheck(item)" class="checkbox-inline cover-check" @click.stop>
+        <div class="resource-card-top">
+          <div class="resource-icon-shell" :class="`kind-${item.type}`">
+            <AppIcon :name="item.icon || (item.type === 'folder' ? 'folder' : 'file')" :size="20" />
+          </div>
+          <div class="resource-card-head-actions">
+            <label v-if="canCheck(item)" class="checkbox-inline" @click.stop>
               <input :checked="selectedIds.includes(item.id)" type="checkbox" @change="emit('toggle-check', item)" />
             </label>
+            <button class="favorite-toggle" @click.stop="emit('favorite', item)">
+              <AppIcon :name="item.favorite ? 'favorites' : 'dot'" :size="14" />
+            </button>
           </div>
-          <div class="editorial-icon-shell" :class="`kind-${item.type}`">
-            <AppIcon :name="item.icon || (item.type === 'folder' ? 'folder' : 'file')" :size="24" />
-          </div>
-          <button class="favorite-toggle editorial-favorite" @click.stop="emit('favorite', item)">
-            <AppIcon :name="item.favorite ? 'favorites' : 'dot'" :size="14" />
-          </button>
         </div>
 
-        <div class="resource-title-wrap editorial-title-wrap">
-          <strong class="resource-title editorial-title">{{ item.name }}</strong>
-          <p class="muted mono clamp-two editorial-path">{{ item.relativePath || item.path || '/' }}</p>
-          <p class="editorial-blurb">{{ item.type === 'folder' ? '把一组书名、章节与路径收进同一页。' : item.type === 'trash' ? '暂存刚刚移开的记录。' : '像一页正文一样安静地躺在暖光里。' }}</p>
+        <div class="resource-title-wrap">
+          <strong class="resource-title">{{ item.name }}</strong>
+          <p class="muted mono clamp-two">{{ item.relativePath || item.path || '/' }}</p>
         </div>
 
-        <div class="resource-meta-grid editorial-meta-grid">
+        <div class="resource-meta-grid">
           <span class="status-badge" :class="statusClass(item.status)">{{ item.status }}</span>
           <span class="pill pill-muted">{{ itemSource(item) }}</span>
           <span class="pill pill-muted">{{ formatBytes(item.size || 0) }}</span>
           <span class="pill pill-muted">{{ formatDateTime(item.updatedAt || item.deletedAt) }}</span>
         </div>
 
-        <div class="resource-actions editorial-actions" @click.stop>
+        <div class="resource-actions" @click.stop>
           <button class="mini-button" @click="item.type === 'folder' ? emit('open', item) : emit('preview', item)">
             {{ item.type === 'folder' ? '打开' : '预览' }}
           </button>
@@ -107,8 +104,8 @@ function onContextMenu(event, item) {
       </article>
     </div>
 
-    <div v-else class="resource-table-wrap editorial-table-wrap">
-      <table class="resource-table editorial-table">
+    <div v-else class="resource-table-wrap">
+      <table class="resource-table">
         <thead>
           <tr>
             <th class="checkbox-col"></th>
@@ -136,8 +133,8 @@ function onContextMenu(event, item) {
               </label>
             </td>
             <td>
-              <div class="name-cell editorial-name-cell">
-                <span class="table-icon editorial-table-icon"><AppIcon :name="item.icon || (item.type === 'folder' ? 'folder' : 'file')" :size="18" /></span>
+              <div class="name-cell">
+                <span class="table-icon"><AppIcon :name="item.icon || (item.type === 'folder' ? 'folder' : 'file')" :size="18" /></span>
                 <div>
                   <strong>{{ item.name }}</strong>
                   <button class="favorite-inline" @click.stop="emit('favorite', item)"><AppIcon :name="item.favorite ? 'favorites' : 'dot'" :size="12" /></button>

@@ -30,9 +30,9 @@ function onRootContextMenu(event) {
     <div class="section-title-row">
       <div>
         <h2>目录树</h2>
-        <p class="muted">本地与远端合并视图，支持右键菜单</p>
+        <p class="muted">本地和远端合并后的目录结构。</p>
       </div>
-      <button class="text-button" @click="emit('select', '')">全部</button>
+      <button class="text-button" @click="emit('select', '')">根目录</button>
     </div>
 
     <ul class="tree-root" @contextmenu="onRootContextMenu">

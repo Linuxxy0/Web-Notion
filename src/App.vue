@@ -11,36 +11,6 @@ import { basename, getFolderStats, normalizePath } from './lib/path';
 import { useAppStore } from './store/appStore';
 
 const UI_STATE_KEY = 'gitnovelbox.ui-state';
-const sceneDefinitions = [
-  {
-    id: 'dawn',
-    label: '清晨',
-    title: '让光先落进房间，再打开目录。',
-    description: '暖灰与云母白像晨间的纱帘，界面不再像一台工具，而像一个被慢慢唤醒的居所。',
-    accent: '#d6b48a',
-  },
-  {
-    id: 'noon',
-    label: '正午',
-    title: '所有文件都沐在温和的光里。',
-    description: '搜索、筛选、拖拽上传被留在最安静的位置，像看不见的手，轻轻调整房间里的秩序。',
-    accent: '#e0c7a2',
-  },
-  {
-    id: 'dusk',
-    label: '黄昏',
-    title: '阅读、沐浴、睡眠，像同一束流动的光。',
-    description: '分屏叙事展示三段生活，文件管理退到背景，只留下松弛与连贯的体验。',
-    accent: '#c98f67',
-  },
-  {
-    id: 'night',
-    label: '深夜',
-    title: '夜色收拢界面，属性像抽屉一样轻轻滑出。',
-    description: '右侧抽屉接近系统资源管理器的质感，把必要信息留给你，把技术噪音藏起来。',
-    accent: '#8c7f86',
-  },
-];
 
 function loadUiState() {
   try {
@@ -56,10 +26,8 @@ function loadUiState() {
       sidebarCollapsed: parsed.sidebarCollapsed ?? false,
       settingsOpen: parsed.settingsOpen ?? false,
       activeSettingsTab: parsed.activeSettingsTab || 'repo',
-      techOpen: parsed.techOpen ?? false,
-      timeOverride: typeof parsed.timeOverride === 'number' ? parsed.timeOverride : null,
     };
-  } catch (error) {
+  } catch {
     return {
       navSection: 'all',
       favoritePaths: [],
@@ -70,8 +38,6 @@ function loadUiState() {
       sidebarCollapsed: false,
       settingsOpen: false,
       activeSettingsTab: 'repo',
-      techOpen: false,
-      timeOverride: null,
     };
   }
 }
@@ -89,23 +55,16 @@ function saveUiState(ui) {
       sidebarCollapsed: ui.sidebarCollapsed,
       settingsOpen: ui.settingsOpen,
       activeSettingsTab: ui.activeSettingsTab,
-      techOpen: ui.techOpen,
-      timeOverride: ui.timeOverride,
     }),
   );
 }
 
 const store = useAppStore();
 const fileInputRef = ref(null);
-const backgroundCanvas = ref(null);
 const contextMenu = ref({ visible: false, x: 0, y: 0, title: '', items: [] });
 const userMenuOpen = ref(false);
 const dropActive = ref(false);
-const scrollProgress = ref(0);
-const ambientValues = reactive({ temperature: 24, humidity: 46, light: 72 });
 const uiState = reactive(loadUiState());
-let animationFrameId = 0;
-let particles = [];
 
 watch(
   uiState,
@@ -133,17 +92,14 @@ const settingsTabs = [
   { key: 'logs', label: '日志' },
 ];
 
-const activeSceneIndex = computed(() => {
-  if (uiState.timeOverride !== null) return uiState.timeOverride;
-  return Math.min(sceneDefinitions.length - 1, Math.max(0, Math.floor(scrollProgress.value * sceneDefinitions.length)));
+const favoriteSet = computed(() => new Set(uiState.favoritePaths));
+const recentSet = computed(() => new Set(uiState.recentItems.map((item) => item.path)));
+
+const selectedItemId = computed(() => {
+  if (store.state.selectedItem.type === 'file') return store.state.selectedEntryId;
+  if (store.state.selectedItem.type === 'folder') return `folder:${store.state.selectedItem.path || ''}`;
+  return '';
 });
-const activeScene = computed(() => sceneDefinitions[activeSceneIndex.value]);
-const sceneMetaCards = computed(() => [
-  { label: '温度', value: `${ambientValues.temperature.toFixed(1)}°C`, hint: '随鼠标位置浮动' },
-  { label: '湿度', value: `${ambientValues.humidity.toFixed(0)}%`, hint: '空气感轻轻变化' },
-  { label: '光照', value: `${ambientValues.light.toFixed(0)}%`, hint: '随场景与滚动调整' },
-]);
-const pageStyle = computed(() => ({ '--scene-accent': activeScene.value.accent }));
 
 const breadcrumbs = computed(() => {
   const current = store.state.selectedFolder || '';
@@ -155,34 +111,6 @@ const breadcrumbs = computed(() => {
     items.push({ label: part, path });
   }
   return items;
-});
-
-const favoriteSet = computed(() => new Set(uiState.favoritePaths));
-const recentSet = computed(() => new Set(uiState.recentItems.map((item) => item.path)));
-
-const selectedItemId = computed(() => {
-  if (store.state.selectedItem.type === 'file') return store.state.selectedEntryId;
-  if (store.state.selectedItem.type === 'folder') return `folder:${store.state.selectedItem.path || ''}`;
-  return '';
-});
-
-const headerSummary = computed(() => {
-  if (uiState.navSection === 'recycle') {
-    return { title: '回收区', description: '删掉的远端记录会暂留在这里，方便你回想刚才做过的动作。' };
-  }
-  if (uiState.navSection === 'favorites') {
-    return { title: '收藏', description: '像把常看的那几本书放在沙发边，随手就能重新打开。' };
-  }
-  if (uiState.navSection === 'recent') {
-    return { title: '最近', description: '保留你刚刚经过的路径，让网盘像日常动线一样自然。' };
-  }
-  if (uiState.navSection === 'remote') {
-    return { title: '远端文件', description: '只看 GitHub 私有仓库里的内容，检查备份是否完整。' };
-  }
-  if (uiState.navSection === 'local') {
-    return { title: '本地文件', description: '只看浏览器已读入的本地 TXT，适合整理再上传。' };
-  }
-  return { title: breadcrumbs.value.at(-1)?.label || '全部文件', description: '主界面只保留导航、目录与网盘内容；配置、统计、日志都藏进设置菜单。' };
 });
 
 const currentFolderNode = computed(() => {
@@ -197,6 +125,36 @@ const currentFolderNode = computed(() => {
     return null;
   };
   return visit(store.directoryTree.value) || store.directoryTree.value;
+});
+
+const headerSummary = computed(() => {
+  switch (uiState.navSection) {
+    case 'recycle':
+      return { title: '回收区', description: '这里只保留删除远端时留下的记录。' };
+    case 'favorites':
+      return { title: '收藏', description: '常用目录和文件会固定在这里。' };
+    case 'recent':
+      return { title: '最近', description: '最近打开过的目录和文件。' };
+    case 'remote':
+      return { title: '远端文件', description: '只显示 GitHub 仓库中的内容。' };
+    case 'local':
+      return { title: '本地文件', description: '只显示当前浏览器已读入的本地 TXT。' };
+    default:
+      return {
+        title: breadcrumbs.value.at(-1)?.label || '全部文件',
+        description: '主区按云盘文件区布局保留目录、工具栏、文件表格和右侧详情。',
+      };
+  }
+});
+
+const workspaceCards = computed(() => {
+  const currentFolderName = breadcrumbs.value.at(-1)?.label || '全部文件';
+  return [
+    { label: '全部文件', value: String(store.mergedEntries.value.length), hint: '当前仓库 + 本地合并后条目' },
+    { label: '待同步', value: String(store.pendingCount.value), hint: '待上传 / 待更新' },
+    { label: '仅远端', value: String(store.remoteOnlyCount.value), hint: '仓库存在，本地未读入' },
+    { label: '当前目录', value: currentFolderName, hint: store.state.selectedFolder || '/' },
+  ];
 });
 
 function rememberRecent(path, type) {
@@ -225,12 +183,18 @@ function toggleFavorite(item) {
 
 function entryMatchesNavigation(entry) {
   switch (uiState.navSection) {
-    case 'remote': return Boolean(entry.remote);
-    case 'local': return Boolean(entry.local);
-    case 'favorites': return isFavorite(entry.relativePath);
-    case 'recent': return recentSet.value.has(entry.relativePath);
-    case 'recycle': return false;
-    default: return true;
+    case 'remote':
+      return Boolean(entry.remote);
+    case 'local':
+      return Boolean(entry.local);
+    case 'favorites':
+      return isFavorite(entry.relativePath);
+    case 'recent':
+      return recentSet.value.has(entry.relativePath);
+    case 'recycle':
+      return false;
+    default:
+      return true;
   }
 }
 
@@ -255,10 +219,14 @@ function entryMatchesFilters(entry) {
   const inSource = `${entry.local ? '本地' : ''}${entry.remote ? '远端' : ''}`.includes(searchQuery);
 
   switch (store.state.searchScope) {
-    case '文件名': return inName;
-    case '路径': return inPath;
-    case '状态': return inStatus || inSource;
-    default: return inName || inPath || inStatus || inSource;
+    case '文件名':
+      return inName;
+    case '路径':
+      return inPath;
+    case '状态':
+      return inStatus || inSource;
+    default:
+      return inName || inPath || inStatus || inSource;
   }
 }
 
@@ -267,12 +235,18 @@ function compareItems(a, b) {
   const statusWeight = { 待上传: 1, 待更新: 2, 仅远端: 3, 已同步: 4, 已移除: 5, 文件夹: 0 };
   const pick = (item) => {
     switch (store.state.sortField) {
-      case 'name': return item.name || '';
-      case 'size': return item.size || 0;
-      case 'status': return statusWeight[item.status] ?? 999;
-      case 'updatedAt': return item.updatedAt || item.deletedAt || 0;
-      case 'source': return item.sourceLabel || `${item.local ? 'L' : ''}${item.remote ? 'R' : ''}`;
-      default: return item.relativePath || item.path || '';
+      case 'name':
+        return item.name || '';
+      case 'size':
+        return item.size || 0;
+      case 'status':
+        return statusWeight[item.status] ?? 999;
+      case 'updatedAt':
+        return item.updatedAt || item.deletedAt || 0;
+      case 'source':
+        return item.sourceLabel || `${item.local ? 'L' : ''}${item.remote ? 'R' : ''}`;
+      default:
+        return item.relativePath || item.path || '';
     }
   };
 
@@ -287,6 +261,7 @@ function compareItems(a, b) {
     if (left === right) return String(a.relativePath || a.path).localeCompare(String(b.relativePath || b.path), 'zh-CN') * dir;
     return (left - right) * dir;
   }
+
   const textCompare = String(left).localeCompare(String(right), 'zh-CN', { numeric: true, sensitivity: 'base' });
   if (textCompare === 0) {
     return String(a.relativePath || a.path).localeCompare(String(b.relativePath || b.path), 'zh-CN', { numeric: true, sensitivity: 'base' }) * dir;
@@ -401,14 +376,31 @@ const explorerItems = computed(() => (uiState.navSection === 'recycle' ? recycle
 const visibleMetricsEntries = computed(() => (uiState.navSection === 'recycle' ? [] : visibleFiles.value));
 const selectedEntries = computed(() => store.mergedEntries.value.filter((entry) => uiState.selectedIds.includes(entry.id)));
 
-function closeContextMenu() { contextMenu.value.visible = false; }
-function showContextMenu({ x, y, title, items }) { contextMenu.value = { visible: true, x, y, title, items }; }
-function openInspector() { uiState.drawerOpen = true; }
-function closeInspector() { uiState.drawerOpen = false; }
-function openSettings(tab = uiState.activeSettingsTab) { uiState.activeSettingsTab = tab; uiState.settingsOpen = true; userMenuOpen.value = false; }
-function closeSettings() { uiState.settingsOpen = false; }
-function setScene(index) { uiState.timeOverride = index; }
-function clearSceneOverride() { uiState.timeOverride = null; }
+function closeContextMenu() {
+  contextMenu.value.visible = false;
+}
+
+function showContextMenu({ x, y, title, items }) {
+  contextMenu.value = { visible: true, x, y, title, items };
+}
+
+function openInspector() {
+  uiState.drawerOpen = true;
+}
+
+function closeInspector() {
+  uiState.drawerOpen = false;
+}
+
+function openSettings(tab = uiState.activeSettingsTab) {
+  uiState.activeSettingsTab = tab;
+  uiState.settingsOpen = true;
+  userMenuOpen.value = false;
+}
+
+function closeSettings() {
+  uiState.settingsOpen = false;
+}
 
 function inspectFolder(path) {
   const normalized = normalizePath(path);
@@ -457,7 +449,10 @@ function toggleSelection(item) {
   if (uiState.selectedIds.includes(item.id)) uiState.selectedIds = uiState.selectedIds.filter((id) => id !== item.id);
   else uiState.selectedIds = [...uiState.selectedIds, item.id];
 }
-function clearSelection() { uiState.selectedIds = []; }
+
+function clearSelection() {
+  uiState.selectedIds = [];
+}
 
 async function syncSelected() {
   const targets = selectedEntries.value.filter((entry) => ['待上传', '待更新'].includes(entry.status));
@@ -476,17 +471,22 @@ async function withCatch(task) {
   }
 }
 
-function openFileInput() { fileInputRef.value?.click(); }
+function openFileInput() {
+  fileInputRef.value?.click();
+}
+
 async function handleDirectoryChoice() {
   if (store.directoryPickerSupported) await withCatch(() => store.chooseLocalDirectory());
   else openFileInput();
 }
+
 async function handleInputChange(event) {
   const files = event.target.files;
   if (!files?.length) return;
   await withCatch(() => store.loadLocalFromInput(files));
   event.target.value = '';
 }
+
 async function handleDrop(event) {
   event.preventDefault();
   dropActive.value = false;
@@ -494,10 +494,24 @@ async function handleDrop(event) {
   if (!files?.length) return;
   await withCatch(() => store.loadLocalFromInput(files));
 }
-function onDragEnter(event) { event.preventDefault(); dropActive.value = true; }
-function onDragOver(event) { event.preventDefault(); dropActive.value = true; }
-function onDragLeave(event) { if (event.currentTarget === event.target) dropActive.value = false; }
-async function handleSingleSync(entry) { await withCatch(() => store.syncEntry(entry, { allowDelete: false })); }
+
+function onDragEnter(event) {
+  event.preventDefault();
+  dropActive.value = true;
+}
+
+function onDragOver(event) {
+  event.preventDefault();
+  dropActive.value = true;
+}
+
+function onDragLeave(event) {
+  if (event.currentTarget === event.target) dropActive.value = false;
+}
+
+async function handleSingleSync(entry) {
+  await withCatch(() => store.syncEntry(entry, { allowDelete: false }));
+}
 
 async function handleDeleteRemote(entry) {
   const confirmed = window.confirm(`确认删除远端文件：${entry.relativePath} ？`);
@@ -598,75 +612,6 @@ function handleNavSelect(section) {
   }
 }
 
-function updateScrollProgress() {
-  const scrollable = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-  scrollProgress.value = Math.min(0.999, window.scrollY / scrollable);
-}
-
-function handleAmbientMove(event) {
-  const rect = event.currentTarget.getBoundingClientRect();
-  const x = (event.clientX - rect.left) / rect.width;
-  const y = (event.clientY - rect.top) / rect.height;
-  ambientValues.temperature = 21 + x * 7;
-  ambientValues.humidity = 38 + (1 - y) * 28;
-  ambientValues.light = 24 + (1 - y) * 60;
-}
-
-function resetAmbient() {
-  ambientValues.temperature = 24;
-  ambientValues.humidity = 46;
-  ambientValues.light = activeSceneIndex.value === 3 ? 18 : 72 - activeSceneIndex.value * 10;
-}
-
-function resizeCanvas() {
-  const canvas = backgroundCanvas.value;
-  if (!canvas) return;
-  const ratio = window.devicePixelRatio || 1;
-  canvas.width = Math.floor(window.innerWidth * ratio);
-  canvas.height = Math.floor(window.innerHeight * ratio);
-  canvas.style.width = `${window.innerWidth}px`;
-  canvas.style.height = `${window.innerHeight}px`;
-  const count = Math.max(12, Math.floor(window.innerWidth / 90));
-  particles = Array.from({ length: count }, () => ({
-    x: Math.random() * canvas.width,
-    y: Math.random() * canvas.height,
-    r: ratio * (0.6 + Math.random() * 1.2),
-    vx: ratio * (0.008 + Math.random() * 0.03),
-    vy: ratio * (0.004 + Math.random() * 0.02),
-    alpha: 0.03 + Math.random() * 0.08,
-  }));
-}
-
-function particleColor(sceneId) {
-  switch (sceneId) {
-    case 'dawn': return '242, 229, 210';
-    case 'noon': return '250, 240, 226';
-    case 'dusk': return '235, 191, 150';
-    case 'night': return '208, 196, 212';
-    default: return '242, 229, 210';
-  }
-}
-
-function animateCanvas() {
-  const canvas = backgroundCanvas.value;
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const rgb = particleColor(activeScene.value.id);
-  for (const particle of particles) {
-    particle.x += particle.vx;
-    particle.y += particle.vy;
-    if (particle.x > canvas.width + 12) particle.x = -12;
-    if (particle.y > canvas.height + 12) particle.y = -12;
-    ctx.beginPath();
-    ctx.fillStyle = `rgba(${rgb}, ${particle.alpha})`;
-    ctx.arc(particle.x, particle.y, particle.r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  animationFrameId = window.requestAnimationFrame(animateCanvas);
-}
-
 function handleGlobalKey(event) {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault();
@@ -683,94 +628,74 @@ function handleGlobalKey(event) {
   }
 }
 
-watch(activeSceneIndex, () => {
-  if (!dropActive.value) resetAmbient();
-});
-
 onMounted(() => {
   store.bootstrap();
   inspectFolder('');
-  resetAmbient();
-  resizeCanvas();
-  animateCanvas();
   window.addEventListener('click', closeContextMenu);
   window.addEventListener('scroll', closeContextMenu, true);
   window.addEventListener('resize', closeContextMenu);
-  window.addEventListener('resize', resizeCanvas);
   window.addEventListener('keydown', handleGlobalKey);
 });
 
 onBeforeUnmount(() => {
-  window.cancelAnimationFrame(animationFrameId);
   window.removeEventListener('click', closeContextMenu);
   window.removeEventListener('scroll', closeContextMenu, true);
   window.removeEventListener('resize', closeContextMenu);
-  window.removeEventListener('resize', resizeCanvas);
   window.removeEventListener('keydown', handleGlobalKey);
 });
 </script>
 
 <template>
-  <div class="app-shell dream-shell" :data-scene="activeScene.id" :style="pageStyle" @contextmenu.self.prevent>
-    <div class="atmosphere-layer">
-      <canvas ref="backgroundCanvas" class="dust-canvas"></canvas>
-      <div class="curtain-overlay"></div>
-      <div class="light-gradient"></div>
-    </div>
-
+  <div class="app-shell cloud-shell" @contextmenu.self.prevent>
     <input ref="fileInputRef" class="hidden-input" type="file" multiple webkitdirectory @change="handleInputChange" />
 
-    <header class="topbar dream-topbar">
+    <header class="topbar">
       <div class="brand-block">
-        <button class="sidebar-toggle" @click="uiState.sidebarCollapsed = !uiState.sidebarCollapsed"><AppIcon :name="uiState.sidebarCollapsed ? 'menu' : 'close'" :size="18" /></button>
-        <div class="brand-logo">
-          <span class="logo-glow"></span>
-          <span class="logo-orbit orbit-a"></span>
-          <span class="logo-orbit orbit-b"></span>
-          <span class="logo-core"><AppIcon name="sparkle" :size="18" /></span>
-        </div>
+        <button class="sidebar-toggle" @click="uiState.sidebarCollapsed = !uiState.sidebarCollapsed">
+          <AppIcon :name="uiState.sidebarCollapsed ? 'menu' : 'close'" :size="16" />
+        </button>
+        <div class="brand-logo">G</div>
         <div class="brand-copy">
           <strong>GitNovelBox</strong>
-          <span>更克制的私有网盘界面 · 保留目录、搜索与同步</span>
+          <span>TXT 云盘工作区</span>
         </div>
       </div>
 
-      <div class="global-search-shell dream-search-shell">
-        <span class="global-search-icon"><AppIcon name="search" :size="16" /></span>
+      <div class="global-search-shell">
+        <span class="global-search-icon"><AppIcon name="search" :size="15" /></span>
+        <input v-model.trim="store.state.searchQuery" class="global-search-input" type="search" placeholder="搜索文件名、路径、状态、本地/远端" />
         <span class="global-search-shortcut">⌘K</span>
-        <input v-model.trim="store.state.searchQuery" class="global-search-input" type="search" placeholder="全局搜索：书名、路径、状态、本地/远端" />
       </div>
 
       <div class="topbar-right">
         <div class="repo-status-pill" :class="store.state.connection.ok ? 'is-ok' : 'is-waiting'">
           <span class="status-dot"></span>
-          <span>{{ store.state.settings.owner || '未配置' }}/{{ store.state.settings.repo || 'repo' }}</span>
-          <strong>{{ store.state.connection.ok ? '已连接' : '待校验' }}</strong>
+          <div class="repo-status-text">
+            <span>{{ store.state.settings.owner || '未配置' }}/{{ store.state.settings.repo || 'repo' }}</span>
+            <strong>{{ store.state.connection.ok ? '已连接' : '待校验' }}</strong>
+          </div>
         </div>
 
         <button class="user-menu-button" @click.stop="userMenuOpen = !userMenuOpen">
-          <span class="avatar-badge"><AppIcon name="settings" :size="15" /></span>
+          <span class="avatar-badge"><AppIcon name="settings" :size="14" /></span>
           <span class="user-menu-text">设置</span>
         </button>
 
         <div v-if="userMenuOpen" class="user-menu" @click.stop>
-          <button @click="openSettings('repo')">打开设置</button>
-          <button @click="openSettings('stats')">统计与日志</button>
+          <button @click="openSettings('repo')">连接与同步</button>
+          <button @click="openSettings('stats')">统计</button>
           <button @click="openSettings('logs')">运行日志</button>
-          <button @click="uiState.drawerOpen = !uiState.drawerOpen">{{ uiState.drawerOpen ? '收起属性抽屉' : '打开属性抽屉' }}</button>
+          <button @click="uiState.drawerOpen = !uiState.drawerOpen">{{ uiState.drawerOpen ? '收起详情栏' : '打开详情栏' }}</button>
         </div>
       </div>
     </header>
 
-    <main class="drive-layout" :class="{ 'sidebar-collapsed': uiState.sidebarCollapsed }">
-      <aside class="drive-sidebar warm-sidebar" :class="{ 'is-collapsed': uiState.sidebarCollapsed }">
-        <section class="card nav-card warm-nav-card">
-          <div class="section-head compact-head nav-card-head">
-            <div>
-              <h2>导航</h2>
-              <p class="muted">收起时保留图标，展开时显示目录与分组。</p>
-            </div>
-          </div>
+    <main class="drive-layout" :class="{ 'sidebar-collapsed': uiState.sidebarCollapsed, 'drawer-visible': uiState.drawerOpen }">
+      <aside class="drive-sidebar" :class="{ 'is-collapsed': uiState.sidebarCollapsed }">
+        <section class="card nav-card">
+          <button class="button button-primary primary-sidebar-action" :disabled="store.state.busy" @click="handleDirectoryChoice">
+            选择本地目录
+          </button>
 
           <nav class="drive-nav-list">
             <button
@@ -796,25 +721,17 @@ onBeforeUnmount(() => {
         />
       </aside>
 
-      <section class="drive-main dream-main">
-        <section class="card workspace-overview-card compact-overview-card">
-          <div class="workspace-overview-copy">
-            <p class="eyebrow">轻量网盘主界面</p>
-            <h1>目录、搜索、同步，保持在同一视线里。</h1>
-            <p class="muted workspace-overview-text">
-              主页不再放大叙事和动态信息，只保留网盘常用操作。统计、日志与连接配置都收进设置面板里，界面会更像常见网盘而不是展示页。
-            </p>
-          </div>
-
-          <div class="workspace-overview-actions">
-            <button class="button button-primary" @click="openSettings('repo')">打开设置</button>
-            <button class="button" @click="openSettings('stats')">统计与日志</button>
-            <button class="button" @click="uiState.drawerOpen = !uiState.drawerOpen">{{ uiState.drawerOpen ? '收起属性栏' : '打开属性栏' }}</button>
-          </div>
+      <section class="drive-main">
+        <section class="summary-strip">
+          <article v-for="card in workspaceCards" :key="card.label" class="summary-card card compact-card">
+            <span class="summary-label">{{ card.label }}</span>
+            <strong class="summary-value">{{ card.value }}</strong>
+            <span class="summary-note">{{ card.hint }}</span>
+          </article>
         </section>
 
         <section
-          class="card explorer-toolbar-card warm-toolbar-card"
+          class="card explorer-toolbar-card"
           :class="{ 'drop-active': dropActive }"
           @dragenter="onDragEnter"
           @dragover="onDragOver"
@@ -826,10 +743,13 @@ onBeforeUnmount(() => {
               <h2>{{ headerSummary.title }}</h2>
               <p class="muted">{{ headerSummary.description }}</p>
             </div>
-
+            <div class="toolbar-title-actions">
+              <button class="button" @click="openSettings('repo')">设置</button>
+              <button class="button" @click="uiState.drawerOpen = !uiState.drawerOpen">{{ uiState.drawerOpen ? '收起详情' : '打开详情' }}</button>
+            </div>
           </div>
 
-          <div class="toolbar-row top-actions-row">
+          <div class="toolbar-row">
             <div class="toolbar-actions-group">
               <button class="button button-primary" :disabled="store.state.busy" @click="handleDirectoryChoice">选择本地目录</button>
               <button class="button" :disabled="store.state.busy || !store.state.localHandle" @click="() => withCatch(() => store.rescanLocalDirectory())">重新扫描</button>
@@ -845,8 +765,8 @@ onBeforeUnmount(() => {
 
           <div class="toolbar-row filter-row">
             <div class="control-stack grow">
-              <label class="field-label">当前位置</label>
-              <div class="breadcrumb-bar warm-breadcrumb-bar">
+              <label class="field-label">路径</label>
+              <div class="breadcrumb-bar">
                 <button v-for="crumb in breadcrumbs" :key="crumb.path || 'root'" class="breadcrumb-button" @click="navigateFolder(crumb.path)">
                   {{ crumb.label }}
                 </button>
@@ -865,7 +785,7 @@ onBeforeUnmount(() => {
               </select>
             </div>
             <div class="control-stack">
-              <label class="field-label">状态筛选</label>
+              <label class="field-label">状态</label>
               <select v-model="store.state.statusFilter" class="select-input">
                 <option>全部</option>
                 <option>已同步</option>
@@ -893,15 +813,16 @@ onBeforeUnmount(() => {
               </select>
             </div>
             <div class="control-stack fit-content">
-              <label class="field-label">拖拽上传</label>
-              <div class="drop-hint-box">拖入 txt 或文件夹到此区域</div>
+              <label class="field-label">拖拽导入</label>
+              <div class="drop-hint-box">拖入 txt 或文件夹</div>
             </div>
           </div>
 
           <div class="summary-row compact-summary-row">
             <span class="summary-chip">本地目录：{{ store.state.localSourceLabel }}</span>
-            <span class="summary-chip">当前 {{ store.state.viewMode === 'cards' ? '卡片视图' : '列表视图' }}</span>
-            <span class="summary-chip busy-chip" :class="{ active: store.state.busy }">{{ store.state.busy ? store.state.busyLabel || '处理中...' : '空闲' }}</span>
+            <span class="summary-chip">视图：{{ store.state.viewMode === 'cards' ? '卡片' : '列表' }}</span>
+            <span class="summary-chip">{{ explorerItems.length }} 项</span>
+            <span class="summary-chip busy-chip" :class="{ active: store.state.busy }">{{ store.state.busy ? store.state.busyLabel || '处理中…' : '空闲' }}</span>
           </div>
         </section>
 
@@ -927,10 +848,10 @@ onBeforeUnmount(() => {
     </main>
 
     <transition name="drawer-slide">
-      <aside v-if="uiState.drawerOpen" class="inspector-drawer warm-inspector" @click.stop>
+      <aside v-if="uiState.drawerOpen" class="inspector-drawer" @click.stop>
         <div class="drawer-header">
           <div>
-            <p class="eyebrow">属性抽屉</p>
+            <p class="eyebrow">详情</p>
             <h2>文件 / 文件夹属性</h2>
           </div>
           <div class="drawer-head-actions">
@@ -939,9 +860,9 @@ onBeforeUnmount(() => {
               :disabled="!store.state.selectedItem.path && !store.state.selectedEntryId"
               @click="toggleFavorite(store.state.selectedItem.type === 'file' ? store.selectedEntry.value : store.state.selectedItem)"
             >
-              <AppIcon :name="isFavorite(store.state.selectedItem.type === 'file' ? store.state.selectedItem.path : store.state.selectedItem.path) ? 'favorites' : 'dot'" :size="16" />
+              <AppIcon :name="isFavorite(store.state.selectedItem.path) ? 'favorites' : 'dot'" :size="15" />
             </button>
-            <button class="icon-button" @click="closeInspector"><AppIcon name="close" :size="16" /></button>
+            <button class="icon-button" @click="closeInspector"><AppIcon name="close" :size="15" /></button>
           </div>
         </div>
 
@@ -963,11 +884,11 @@ onBeforeUnmount(() => {
         <section class="settings-modal card">
           <div class="settings-modal-head">
             <div>
-              <p class="eyebrow">设置菜单</p>
-              <h2>把配置、统计和日志放回幕后</h2>
-              <p class="muted">主界面只留下导航、目录与网盘内容；其余信息都安静地收在这里。</p>
+              <p class="eyebrow">设置</p>
+              <h2>连接、统计和日志</h2>
+              <p class="muted">主界面只保留文件区，配置和统计放到这里。</p>
             </div>
-            <button class="icon-button" @click="closeSettings"><AppIcon name="close" :size="16" /></button>
+            <button class="icon-button" @click="closeSettings"><AppIcon name="close" :size="15" /></button>
           </div>
 
           <div class="settings-tabs">
@@ -1011,10 +932,10 @@ onBeforeUnmount(() => {
       </div>
     </transition>
 
-    <footer class="drive-footer warm-footer compact-footer">
-      <span>{{ store.state.settings.owner || '-' }}/{{ store.state.settings.repo || '-' }} @ {{ store.state.settings.branch || '-' }}</span>
+    <footer class="drive-footer">
+      <span>{{ store.state.settings.owner || '-' }}/{{ store.state.settings.repo || '-' }}</span>
+      <span>分支：{{ store.state.settings.branch || '-' }}</span>
       <span>前缀：{{ store.state.settings.repoPrefix || 'books' }}</span>
-      <span>{{ store.state.viewMode === 'cards' ? '卡片视图' : '列表视图' }}</span>
     </footer>
 
     <teleport to="body">
